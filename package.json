@@ -48,7 +48,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "HolyHotsauce-Setup-${version}.${ext}"
     },
     "mac": {
       "target": "dmg",
