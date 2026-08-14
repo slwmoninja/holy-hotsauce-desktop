@@ -36,22 +36,41 @@ const shapeSeedling = makeGrid((r,c)=>{
   return soil||stem||leafL||leafR;
 });
 
-// Ovate-lanceolate with a pointed tip and a short petiole (stem) at the
-// base, closer to a real chili pepper leaf than the previous symmetric
-// lens shape. A midrib vein was tried but at this pixel resolution the
-// vein-as-hole mechanic (see isBorderCell) outlines both its edges, which
-// reads as a carved-out eye/hole rather than a subtle vein -- so this
-// stays a clean silhouette instead.
+// Ovate-lanceolate with a pointed tip, a central midrib + two pairs of
+// side veins, and a short petiole (stem) at the base -- closer to a real
+// chili pepper leaf. Two things had to change from the first attempt at
+// this shape to get there:
+//  1. The tip taper used sin() easing, which grows almost linearly near
+//     zero -- at this pixel resolution that reached 4 columns wide by
+//     the SECOND row, reading as a flat/round cap instead of a point.
+//     A power curve (t^2.4) grows near-zero for several rows before
+//     accelerating, giving a genuinely narrow point across multiple rows.
+//  2. Veins used to be a "hole" in the silhouette (a cell excluded from
+//     the body), which gets both its edges outlined by isBorderCell just
+//     like the outer silhouette -- reads as a carved-out eye, not a
+//     vein. Veins are body cells now (see cellOn), just with their own
+//     "vein" fill color instead of the leaf's default shade.
 const shapeLeaf = makeGrid((r,c)=>{
   const cx = PG/2-0.5;
   if(r>=1 && r<=18){
     const t = (r-1)/17;
-    const peak = 0.38, maxHalf = 6.3, minFrac = 0.15;
+    const peak = 0.38, maxHalf = 6.3, minFrac = 0.15, tipPower = 2.4;
     let w;
-    if(t<=peak) w = Math.sin((t/peak)*Math.PI/2);
+    if(t<=peak) w = Math.pow(t/peak, tipPower);
     else { const tt=(t-peak)/(1-peak); w = Math.pow(1-tt,0.75)*(1-minFrac)+minFrac; }
     const half = maxHalf*w;
-    return Math.abs(c-cx)<=half;
+    if(Math.abs(c-cx)>half) return false;
+    if(Math.abs(c-cx)<=0.5 && r>=5 && r<=15) return "vein";
+    for(const [vr0,vr1,off] of [[6,9,2.2],[10,13,2.6]]){
+      if(r>=vr0 && r<=vr1){
+        const tt2=(r-vr0)/(vr1-vr0);
+        for(const sign of [-1,1]){
+          const vc = cx+sign*off*tt2;
+          if(Math.abs(c-vc)<=0.5) return "vein";
+        }
+      }
+    }
+    return true;
   }
   if(r>=19 && r<=22 && Math.abs(c-cx)<=1.1) return "stem";
   return false;
@@ -128,24 +147,38 @@ const STAGE_SHAPES = [shapeSeedling, shapeLeaf, shapeBlossom, shapePepper, shape
 const STAGE_NAMES_ART = ["seedling","leaf","blossom","pepper","bottle"];
 const STAGE_COLORS = {
   seedling: {default:"#4caf50", pot:"#c07a4e"},
-  leaf:     {default:"#4caf50", stem:"#6ea83f"},
+  leaf:     {default:"#4caf50", stem:"#6ea83f", vein:"#1b5e20"},
   blossom:  {default:"#f2a6c4", center:"#f4c542"},
   pepper:   {default:"#d32f2f", stem:"#4caf50", calyx:"#4caf50"},
   bottle:   {default:"#d32f2f", label:"#f0e6da", cap:"#6a1b9a"}
 };
-function cellOn(v){ return v===true || (typeof v==="string" && v!=="vein"); }
+// "vein" used to be excluded here (a hole, not body) so it could draw as
+// a solid dark line -- but a hole gets its edges outlined by
+// isBorderCell just like the outer silhouette, which at this pixel
+// resolution reads as a carved-out eye rather than a subtle vein.
+// Veins are body cells now, just with their own fill color (see
+// STAGE_COLORS.leaf.vein / colorFor) instead of the default shade.
+function cellOn(v){ return v===true || typeof v==="string"; }
 function cellKind(v){ return typeof v==="string" ? v : null; }
-function colorFor(stage, kind){
+// `instanceColor` is the specific pepper's own gradient color (PEPPERS[i]
+// .color); a stage-specific "kind" override (pot/stem/calyx/cap/label/
+// vein -- a fixed-role part like a brown pot or purple cap that shouldn't
+// vary by pepper) still wins when present. Previously this always fell
+// back to a hardcoded STAGE_COLORS[stage].default instead of the pepper's
+// own color, so growing icons and shelf bottles rendered in one fixed
+// color per stage no matter which pepper -- only the flat chart-list
+// swatches (plain CSS background, no drawIcon involved) ever showed the
+// real per-pepper gradient.
+function colorFor(stage, kind, instanceColor){
   const m = STAGE_COLORS[stage];
-  return (kind && m[kind]) ? m[kind] : m.default;
+  return (kind && m[kind]) ? m[kind] : instanceColor;
 }
 
 function computeBounds(grid){
   let minR=PG,maxR=-1,minC=PG,maxC=-1;
   for(let r=0;r<PG;r++){
     for(let c=0;c<PG;c++){
-      const v = grid[r][c];
-      if(cellOn(v) || cellKind(v)==="vein"){
+      if(cellOn(grid[r][c])){
         if(r<minR)minR=r; if(r>maxR)maxR=r;
         if(c<minC)minC=c; if(c>maxC)maxC=c;
       }
@@ -246,7 +279,6 @@ function shadeForCell(color, r, c, bounds){
 const OUTLINE_DARK = "#000000";
 const OUTLINE_LIGHT = "#ffffff";
 const GRID_COLOR = "#140b09";
-const VEIN_COLOR = "#1a100d";
 
 /* draws one stage icon into a canvas at a continuous fill fraction (0..1) */
 function drawIcon(canvas, stageIdx, color, fillFrac){
@@ -262,12 +294,6 @@ function drawIcon(canvas, stageIdx, color, fillFrac){
 
   for(let r=0;r<PG;r++){
     for(let c=0;c<PG;c++){
-      const v = grid[r][c];
-      if(cellKind(v)==="vein"){
-        ctx.fillStyle = VEIN_COLOR;
-        ctx.fillRect(c*cell, r*cell, cell, cell);
-        continue;
-      }
       if(isBorderCell(grid,r,c)){
         // Alternating black/white "marching ants" outline (see
         // computeOutlineColors) instead of a single fixed color, so the
@@ -295,7 +321,7 @@ function drawIcon(canvas, stageIdx, color, fillFrac){
       ctx.fillStyle = GRID_COLOR;
       ctx.fillRect(c*cell, r*cell, cell, cell);
       const kind = cellKind(v);
-      const baseColor = (stage==="seedling" && r>=17) ? colorFor(stage,"pot") : colorFor(stage, kind);
+      const baseColor = (stage==="seedling" && r>=17) ? colorFor(stage,"pot",color) : colorFor(stage, kind, color);
       if(kind==="label"){
         ctx.fillStyle = baseColor;
       } else {

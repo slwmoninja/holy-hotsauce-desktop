@@ -23,8 +23,11 @@
       "main.js",
       "preload.js",
       "renderer.js",
+      "game.js",
+      "game-preload.js",
       "shapes.js",
       "index.html",
+      "game.html",
       "tray-icon.png",
       "package.json"
     ],
