@@ -16,6 +16,7 @@ const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, clipboard,
 const path = require("path");
 const fs = require("fs");
 const { uIOhook, UiohookKey } = require("uiohook-napi");
+const { autoUpdater } = require("electron-updater");
 
 // Color ramps with heat, extra mild (yellow) -> mild (green) -> warm
 // (orange) -> hot (red), interpolated across all 50 tiers. Kept in sync
@@ -401,6 +402,57 @@ function showAndFocusWindow() {
   mainWindow.focus();
 }
 
+/* ---- auto-update (GitHub Releases via electron-builder's "publish"
+   config) -- so a fix doesn't mean everyone has to notice, re-download,
+   and re-run the installer by hand every time, the way it's worked
+   until now. Only runs in a packaged build: `npm start` has no real
+   update feed to check against, and re-checking constantly during dev
+   would just be noise. Downloads silently in the background; only
+   interrupts once it's fully downloaded and ready to install. */
+const updateState = { downloaded: false, version: null };
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.on("update-downloaded", (info) => {
+  updateState.downloaded = true;
+  updateState.version = info.version;
+  refreshTrayMenu();
+  dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "Holy Hotsauce! update ready",
+    message: `Version ${info.version} has been downloaded.`,
+    detail: "Restart now to install it, or it'll install automatically the next time you quit.",
+    buttons: ["Restart Now", "Later"],
+    defaultId: 0,
+    cancelId: 1
+  }).then(({ response }) => {
+    if (response === 0) autoUpdater.quitAndInstall();
+  });
+});
+autoUpdater.on("error", () => {}); // silent -- a network hiccup shouldn't interrupt anyone typing
+function checkForUpdates(manual) {
+  if (!app.isPackaged) {
+    if (manual) {
+      dialog.showMessageBox(mainWindow, {
+        type: "info",
+        message: "Updates only run in the installed app, not this dev build (`npm start`).",
+        buttons: ["OK"]
+      });
+    }
+    return;
+  }
+  if (updateState.downloaded) {
+    autoUpdater.quitAndInstall();
+    return;
+  }
+  autoUpdater.checkForUpdates().then((result) => {
+    if (manual && (!result || !result.updateInfo || result.updateInfo.version === app.getVersion())) {
+      dialog.showMessageBox(mainWindow, { type: "info", message: "You're on the latest version.", buttons: ["OK"] });
+    }
+  }).catch(() => {
+    if (manual) dialog.showMessageBox(mainWindow, { type: "error", message: "Couldn't check for updates -- check your internet connection.", buttons: ["OK"] });
+  });
+}
+
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: "Holy Hotsauce!", enabled: false },
@@ -408,6 +460,11 @@ function buildTrayMenu() {
     { label: "Open Game", click: openGameWindow },
     { label: "Show Widget", click: showAndFocusWindow },
     { label: "Hide Widget (stays in tray, still counting)", click: () => { if (mainWindow) mainWindow.hide(); } },
+    { type: "separator" },
+    {
+      label: updateState.downloaded ? `Restart to Install Update (v${updateState.version})` : "Check for Updates",
+      click: () => { if (updateState.downloaded) autoUpdater.quitAndInstall(); else checkForUpdates(true); }
+    },
     { type: "separator" },
     {
       label: "Always on Top",
@@ -598,6 +655,11 @@ if (!gotLock) {
     if (state.settings.autoStartOnLogin) {
       app.setLoginItemSettings({ openAtLogin: true });
     }
+    // Delayed so it never competes with startup for network/CPU, and
+    // repeated periodically since this app is meant to stay running in
+    // the tray for a long time, not get relaunched daily.
+    setTimeout(() => checkForUpdates(false), 8000);
+    setInterval(() => checkForUpdates(false), 4 * 60 * 60 * 1000);
   });
 }
 
