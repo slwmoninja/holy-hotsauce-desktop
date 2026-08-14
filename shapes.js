@@ -36,26 +36,25 @@ const shapeSeedling = makeGrid((r,c)=>{
   return soil||stem||leafL||leafR;
 });
 
+// Ovate-lanceolate with a pointed tip and a short petiole (stem) at the
+// base, closer to a real chili pepper leaf than the previous symmetric
+// lens shape. A midrib vein was tried but at this pixel resolution the
+// vein-as-hole mechanic (see isBorderCell) outlines both its edges, which
+// reads as a carved-out eye/hole rather than a subtle vein -- so this
+// stays a clean silhouette instead.
 const shapeLeaf = makeGrid((r,c)=>{
-  const t = r/(PG-1);
-  const peak = 0.56, maxHalf = 8.4;
-  let w;
-  if(t<=peak) w = Math.sin((t/peak)*Math.PI/2);
-  else { const tt=(t-peak)/(1-peak); w = Math.sqrt(Math.max(0,1-tt*tt)); }
-  const half = maxHalf*w;
   const cx = PG/2-0.5;
-  const body = Math.abs(c-cx)<=half;
-  if(!body) return false;
-  if(Math.abs(c-cx)<=0.5 && r>=3 && r<=15) return "vein";
-  for(const sign of [-1,1]){
-    const vr0=7, vc0=cx, vr1=11, vc1=cx+sign*4.2;
-    if(r>=vr0 && r<=vr1){
-      const tt2=(r-vr0)/(vr1-vr0);
-      const vc = vc0+(vc1-vc0)*tt2;
-      if(Math.abs(c-vc)<=0.5) return "vein";
-    }
+  if(r>=1 && r<=18){
+    const t = (r-1)/17;
+    const peak = 0.38, maxHalf = 6.3, minFrac = 0.15;
+    let w;
+    if(t<=peak) w = Math.sin((t/peak)*Math.PI/2);
+    else { const tt=(t-peak)/(1-peak); w = Math.pow(1-tt,0.75)*(1-minFrac)+minFrac; }
+    const half = maxHalf*w;
+    return Math.abs(c-cx)<=half;
   }
-  return true;
+  if(r>=19 && r<=22 && Math.abs(c-cx)<=1.1) return "stem";
+  return false;
 });
 
 const shapeBlossom = makeGrid((r,c)=>{
@@ -129,7 +128,7 @@ const STAGE_SHAPES = [shapeSeedling, shapeLeaf, shapeBlossom, shapePepper, shape
 const STAGE_NAMES_ART = ["seedling","leaf","blossom","pepper","bottle"];
 const STAGE_COLORS = {
   seedling: {default:"#4caf50", pot:"#c07a4e"},
-  leaf:     {default:"#4caf50"},
+  leaf:     {default:"#4caf50", stem:"#6ea83f"},
   blossom:  {default:"#f2a6c4", center:"#f4c542"},
   pepper:   {default:"#d32f2f", stem:"#4caf50", calyx:"#4caf50"},
   bottle:   {default:"#d32f2f", label:"#f0e6da", cap:"#6a1b9a"}
