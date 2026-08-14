@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Holy Hotsauce!</title>
+<style>
+  :root{
+    --bg-0:#ffffff;
+    --panel:#ffffff;
+    --panel-2:#f2f2f2;
+    --border:#d8d8d8;
+    --text:#231a17;
+    --text-dim:#767676;
+    --accent:#d32f2f;
+    --accent-2:#2e7d32;
+    --good:#2e7d32;
+    --shadow:#b6b6b6;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;
+    background:var(--bg-0);
+    color:var(--text);
+    font-family:"Courier New", Consolas, monospace;
+  }
+  body{padding:18px 16px 40px;}
+  h1,h2,h3{margin:0;}
+  .title{
+    text-align:center;
+    font-size:24px;
+    letter-spacing:4px;
+    color:var(--accent);
+    margin-bottom:2px;
+  }
+  .subtitle{
+    text-align:center;
+    color:var(--text-dim);
+    font-size:11px;
+    letter-spacing:2px;
+    margin-bottom:16px;
+  }
+  .keystroke-bar{
+    margin:0 auto 10px;
+    max-width:520px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:var(--panel);
+    border:2px solid var(--border);
+    box-shadow:4px 4px 0 var(--shadow);
+    padding:10px 16px;
+    font-size:12px;
+  }
+  .keystroke-bar .k-num{color:var(--accent-2);font-weight:bold;font-size:15px;}
+  .totals-bar{
+    margin:0 auto 18px;
+    max-width:520px;
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    font-size:10px;
+    color:var(--text-dim);
+    padding:0 4px;
+  }
+  .layout{
+    max-width:520px;
+    margin:0 auto;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:18px;
+  }
+  .grow-stage{
+    background:var(--panel);
+    border:2px solid var(--border);
+    box-shadow:6px 6px 0 var(--shadow);
+    padding:20px 26px 16px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    position:relative;
+    min-width:260px;
+    width:100%;
+  }
+  .grow-stage .chart-pos{
+    position:absolute;
+    top:8px; left:12px;
+    font-size:10px;
+    color:var(--text-dim);
+    letter-spacing:1px;
+  }
+  canvas.icon-canvas{
+    filter:drop-shadow(0 6px 10px rgba(0,0,0,0.55));
+  }
+  .grow-name{
+    margin-top:10px;
+    font-size:16px;
+    color:var(--text);
+    letter-spacing:1px;
+    text-align:center;
+  }
+  .grow-stage-label{
+    font-size:11px;
+    color:var(--accent-2);
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin-top:2px;
+  }
+  .progress-outer{
+    width:220px;
+    height:14px;
+    background:#eeeeee;
+    border:2px solid var(--border);
+    margin-top:10px;
+    position:relative;
+  }
+  .progress-inner{
+    height:100%;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));
+    width:0%;
+    transition:width 0.12s linear;
+  }
+  .progress-text{
+    font-size:10px;
+    color:var(--text-dim);
+    margin-top:5px;
+    letter-spacing:1px;
+  }
+  .hint{
+    font-size:10px;
+    color:var(--text-dim);
+    margin-top:8px;
+    opacity:0.8;
+    text-align:center;
+  }
+  .shelf-wrap{width:100%;}
+  .shelf-title{
+    font-size:11px;
+    letter-spacing:2px;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    margin-bottom:8px;
+    text-align:center;
+  }
+  .shelf{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    justify-content:center;
+    background:var(--panel-2);
+    border:2px solid var(--border);
+    padding:14px;
+    min-height:60px;
+  }
+  .shelf-empty{
+    color:var(--text-dim);
+    font-size:11px;
+    align-self:center;
+    opacity:0.7;
+  }
+  .shelf-more{
+    text-align:center;
+    font-size:10px;
+    color:var(--accent-2);
+    margin-top:6px;
+    cursor:pointer;
+    display:none;
+  }
+  .shelf-more:hover{text-decoration:underline;}
+  .shelf-more.show{display:block;}
+  .shelf-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    width:60px;
+  }
+  .shelf-item canvas{image-rendering:pixelated;}
+  .shelf-item .cnt{
+    font-size:9px;
+    color:var(--accent-2);
+    margin-top:2px;
+  }
+  .shelf-item .nm{
+    font-size:8px;
+    color:var(--text-dim);
+    text-align:center;
+    line-height:1.2;
+    margin-top:1px;
+    max-width:60px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .chart-panel{
+    width:100%;
+    background:var(--panel);
+    border:2px solid var(--border);
+    box-shadow:4px 4px 0 var(--shadow);
+    padding:14px 16px;
+  }
+  .chart-panel h2{
+    font-size:11px;
+    letter-spacing:2px;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  .chart-list{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:5px;
+    max-height:260px;
+    overflow-y:auto;
+  }
+  .chart-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:5px 8px;
+    font-size:11px;
+    border:1px solid transparent;
+  }
+  .chart-row .swatch{
+    width:10px;height:10px;flex:none;
+    border:1px solid var(--shadow);
+  }
+  .chart-row.done{color:var(--good);}
+  .chart-row.current{
+    border-color:var(--accent);
+    background:rgba(211,47,47,0.08);
+    color:var(--accent-2);
+  }
+  .chart-row .shu{
+    margin-left:auto;
+    color:var(--text-dim);
+    font-size:9px;
+  }
+  .chart-row.done .shu{color:var(--good);}
+  .hybrid-toggle-bar{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    background:var(--panel);
+    border:2px solid var(--border);
+    box-shadow:3px 3px 0 var(--shadow);
+    padding:10px 16px;
+    font-size:11px;
+    color:var(--text);
+  }
+  .hybrid-toggle-sub{
+    display:block;
+    font-size:9px;
+    color:var(--text-dim);
+    margin-top:2px;
+    font-weight:normal;
+  }
+  .hybrid-off-msg{
+    display:none;
+    width:100%;
+    background:var(--panel-2);
+    border:2px solid var(--border);
+    padding:12px 16px;
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:center;
+  }
+  .hybrid-off-msg.show{display:block;}
+  .hybrid-panel{
+    width:100%;
+    background:var(--panel);
+    border:2px solid var(--accent);
+    box-shadow:4px 4px 0 var(--shadow);
+    padding:16px 18px;
+    display:none;
+  }
+  .hybrid-panel.unlocked{display:block;}
+  .hybrid-panel h2{
+    font-size:13px;
+    letter-spacing:2px;
+    color:var(--accent-2);
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .hybrid-panel .desc{
+    font-size:10px;
+    color:var(--text-dim);
+    margin-bottom:12px;
+  }
+  .hybrid-form{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+  }
+  .hybrid-form select, .hybrid-form input{
+    background:#eeeeee;
+    border:2px solid var(--border);
+    color:var(--text);
+    font-family:inherit;
+    font-size:11px;
+    padding:6px 7px;
+  }
+  .hybrid-form input[type=text]{width:140px;}
+  .hybrid-form button{
+    background:var(--accent);
+    border:2px solid var(--shadow);
+    color:#1a0f0a;
+    font-family:inherit;
+    font-weight:bold;
+    font-size:11px;
+    letter-spacing:1px;
+    padding:7px 14px;
+    cursor:pointer;
+    text-transform:uppercase;
+  }
+  .hybrid-form button:disabled{opacity:0.4;cursor:not-allowed;}
+  .hybrid-form button:not(:disabled):hover{background:var(--accent-2);}
+  .hybrid-note{
+    margin-top:10px;
+    font-size:10px;
+    color:var(--text-dim);
+  }
+  .hybrid-locked-msg{
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:center;
+    padding:10px;
+  }
+  .toggle-switch{
+    position:relative;
+    width:40px;height:22px;
+    border-radius:11px;
+    background:var(--accent);
+    border:2px solid #7a1f1f;
+    box-sizing:border-box;
+    flex:none;
+    cursor:pointer;
+  }
+  .toggle-switch .knob{
+    position:absolute;
+    top:2px;left:2px;
+    width:14px;height:14px;
+    border-radius:50%;
+    background:#fff;
+    box-shadow:0 1px 2px rgba(0,0,0,0.4);
+    transition:left 0.15s;
+  }
+  .toggle-switch.on{background:var(--accent-2);border-color:#1b5e20;}
+  .toggle-switch.on .knob{left:20px;}
+</style>
+</head>
+<body>
+  <div class="title">HOLY HOTSAUCE!</div>
+  <div class="subtitle">an idle game powered by your keystrokes</div>
+
+  <div class="keystroke-bar">
+    <span>TOTAL KEYSTROKES</span>
+    <span class="k-num" id="keystrokeTotal">0</span>
+  </div>
+  <div class="totals-bar">
+    <span id="statHotsauces">0 hotsauces</span>
+    <span id="statScoville">0 total SHU</span>
+  </div>
+
+  <div class="layout">
+    <div class="hybrid-toggle-bar">
+      <span>Hybrid Lab <span class="hybrid-toggle-sub">breed custom varieties once you reach Pepper X</span></span>
+      <div class="toggle-switch" id="toggleHybridLab"><div class="knob"></div></div>
+    </div>
+
+    <div class="hybrid-locked-msg" id="hybridLockedMsg">
+      🔒 reach the top of the Scoville chart (Pepper X) to unlock the Hybrid Lab and breed your own custom varieties.
+    </div>
+
+    <div class="hybrid-off-msg" id="hybridOffMsg">
+      Hybrid Lab is off — you'll keep re-growing Pepper X (⚗️ ×<span id="pepperXLoopCount">0</span> so far) instead of breeding. Flip the toggle above to unlock breeding.
+    </div>
+
+    <div class="hybrid-panel" id="hybridPanel">
+      <h2>🧪 You have unlocked the Hybrid Lab!</h2>
+      <div class="desc">Mix two owned peppers into a custom 50/50 SHU blend. It keeps producing until you breed a new one.</div>
+      <div class="hybrid-form">
+        <select id="parentA"></select>
+        <span>&times;</span>
+        <select id="parentB"></select>
+        <input type="text" id="hybridName" placeholder="Name your hybrid..." maxlength="28">
+        <button id="breedBtn">Breed</button>
+      </div>
+      <div class="hybrid-note" id="breedPreview"></div>
+    </div>
+
+    <div class="grow-stage" id="growStage">
+      <span class="chart-pos" id="chartPos">1 / 50</span>
+      <canvas class="icon-canvas" id="activeIcon" width="192" height="192"></canvas>
+      <div class="grow-name" id="growName">Bell Pepper</div>
+      <div class="grow-stage-label" id="growStageLabel">Seedling</div>
+      <div class="progress-outer"><div class="progress-inner" id="growProgressBar"></div></div>
+      <div class="progress-text" id="growProgressText">0 / 1000</div>
+      <div class="hint">type anywhere on your PC to grow &middot; every keystroke here counts too</div>
+    </div>
+
+    <div class="shelf-wrap">
+      <div class="shelf-title">Hotsauce Shelf</div>
+      <div class="shelf" id="shelf">
+        <div class="shelf-empty">no bottles finished yet — keep typing!</div>
+      </div>
+      <div class="shelf-more" id="shelfMoreLink">see the full store room &rarr;</div>
+    </div>
+
+    <div class="chart-panel">
+      <h2>Scoville Chart</h2>
+      <div class="chart-list" id="chartList"></div>
+    </div>
+  </div>
+
+  <script src="shapes.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

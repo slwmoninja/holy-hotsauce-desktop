@@ -12,7 +12,7 @@
    the web app's own keystroke counter, just wired to a system-wide hook
    instead of a single window's keydown event.
    ========================================================= */
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, shell, nativeImage, clipboard, dialog } = require("electron");
+const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, clipboard, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { uIOhook, UiohookKey } = require("uiohook-napi");
@@ -74,7 +74,6 @@ const PEPPERS = [
 ];
 const STAGES = ["Seedling", "Leaf", "Blossom", "Pepper", "Hotsauce Bottle"];
 const KEYSTROKES_PER_STAGE = 1000;
-const WEB_GAME_URL = "https://slwmoninja.github.io/holy-hotsauce/";
 
 // Dev runs (npm start, not packaged) use a separate userData profile so
 // testing this file never races with -- or corrupts -- a real installed
@@ -98,12 +97,19 @@ function defaultState() {
     completedCounts: {},
     totalHotsauces: 0,
     totalScoville: 0,
+    totalCustomHotsauces: 0,
+    completionHistory: [],   // pepper names, in the order finished -- powers "latest 5" on the shelf
+    customPeppers: [],       // {name, scoville, color, parentA, parentB}
+    pendingCustomIndex: -1,  // index into customPeppers currently being grown, -1 = none
     settings: {
       alwaysOnTop: false,
       autoStartOnLogin: false,
       iconSize: "S",
       winX: null,
       winY: null,
+      // when false, reaching Pepper X just re-grows Pepper X in a loop
+      // instead of unlocking the Hybrid Lab -- matches the web app
+      hybridLabEnabled: true,
       // Off by default ("not always on"). This app never touches the
       // microphone itself -- it has no audio code at all. Whatever voice
       // app the user already prefers (Whisper-based or otherwise) drives
@@ -195,16 +201,62 @@ async function restoreFromFile() {
 }
 
 function officialDone() { return state.chartPosition >= PEPPERS.length; }
+
+// Ported from the web app so the desktop game window has full feature
+// parity: breeding a custom hybrid, re-looping Pepper X when the Hybrid
+// Lab is off, or waiting on a breeding choice once it's on.
 function currentGrowing() {
-  if (!officialDone()) return PEPPERS[state.chartPosition];
-  return PEPPERS[PEPPERS.length - 1]; // desktop widget has no Hybrid Lab -- just re-loops the top pepper
+  if (state.pendingCustomIndex >= 0 && state.customPeppers[state.pendingCustomIndex]) {
+    return Object.assign({ isCustom: true }, state.customPeppers[state.pendingCustomIndex]);
+  }
+  if (!officialDone()) return Object.assign({ isCustom: false }, PEPPERS[state.chartPosition]);
+  if (!state.settings.hybridLabEnabled) return Object.assign({ isCustom: false }, PEPPERS[PEPPERS.length - 1]);
+  return null; // waiting on a Hybrid Lab choice
+}
+
+function ownedList() {
+  const out = [];
+  PEPPERS.forEach((p) => { if (state.completedCounts[p.name]) out.push(p); });
+  state.customPeppers.forEach((p) => { if (state.completedCounts[p.name]) out.push(p); });
+  return out;
+}
+
+function mixHex(h1, h2) {
+  const n1 = parseInt(h1.slice(1), 16), n2 = parseInt(h2.slice(1), 16);
+  const r = Math.round((((n1 >> 16) & 0xff) + ((n2 >> 16) & 0xff)) / 2);
+  const g = Math.round((((n1 >> 8) & 0xff) + ((n2 >> 8) & 0xff)) / 2);
+  const b = Math.round(((n1 & 0xff) + (n2 & 0xff)) / 2);
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+function breedHybrid(parentAName, parentBName, rawName) {
+  const owned = ownedList();
+  const a = owned.find((p) => p.name === parentAName);
+  const b = owned.find((p) => p.name === parentBName);
+  const name = (rawName || "").trim();
+  if (!a || !b || a.name === b.name || !name || state.pendingCustomIndex >= 0) return;
+  const blended = Math.round((a.scoville + b.scoville) / 2);
+  const custom = { name, scoville: blended, color: mixHex(a.color, b.color), parentA: a.name, parentB: b.name };
+  state.customPeppers.push(custom);
+  state.pendingCustomIndex = state.customPeppers.length - 1;
+  state.stageIndex = 0;
+  state.stageProgress = 0;
+  saveStateDebounced();
+  broadcastState();
 }
 
 function completePepper(p) {
   state.completedCounts[p.name] = (state.completedCounts[p.name] || 0) + 1;
   state.totalHotsauces++;
   state.totalScoville += p.scoville;
-  state.chartPosition++;
+  state.completionHistory.push(p.name);
+  if (state.completionHistory.length > 300) state.completionHistory.shift();
+  if (p.isCustom) {
+    state.totalCustomHotsauces++;
+    state.pendingCustomIndex = -1;
+  } else {
+    state.chartPosition++;
+  }
 }
 
 /* One keystroke event in, one counter increment out -- nothing else ever
@@ -216,6 +268,7 @@ function addKeystrokes(n) {
   for (let i = 0; i < n; i++) {
     state.totalKeystrokes++;
     const g = currentGrowing();
+    if (!g) break; // nothing to grow until a hybrid is chosen
     state.stageProgress++;
     if (state.stageProgress >= KEYSTROKES_PER_STAGE) {
       state.stageProgress = 0;
@@ -232,28 +285,38 @@ function addKeystrokes(n) {
 function addKeystroke() { addKeystrokes(1); }
 
 let mainWindow = null;
+let gameWindow = null;
 let tray = null;
 
+// Everything the game window needs to render the growing icon, the
+// Scoville chart, the Hotsauce Shelf, and the Hybrid Lab -- the widget
+// snapshot only needed pepper/stage/totals, but this is the same single
+// source of truth (`state`), just a fuller view of it.
 function currentSnapshot() {
   const g = currentGrowing();
   return {
     pepper: g,
     stageIndex: state.stageIndex,
     stageProgress: state.stageProgress,
-    fillFrac: state.stageProgress / KEYSTROKES_PER_STAGE,
+    fillFrac: g ? state.stageProgress / KEYSTROKES_PER_STAGE : 0,
     stageName: STAGES[state.stageIndex],
     totalKeystrokes: state.totalKeystrokes,
     totalHotsauces: state.totalHotsauces,
     totalScoville: state.totalScoville,
+    totalCustomHotsauces: state.totalCustomHotsauces,
     chartPos: officialDone() ? null : state.chartPosition + 1,
     chartLen: PEPPERS.length,
+    completedCounts: state.completedCounts,
+    completionHistory: state.completionHistory,
+    customPeppers: state.customPeppers,
+    pendingCustomIndex: state.pendingCustomIndex,
     settings: state.settings
   };
 }
 function broadcastState() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("state-update", currentSnapshot());
-  }
+  const snap = currentSnapshot();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("state-update", snap);
+  if (gameWindow && !gameWindow.isDestroyed()) gameWindow.webContents.send("state-update", snap);
 }
 
 function createWindow() {
@@ -292,28 +355,43 @@ function createWindow() {
   mainWindow.webContents.once("did-finish-load", broadcastState);
 }
 
-/* Shows THIS app's own global-keystroke totals in a native dialog -- not
-   the web game's totals, which are a separate, unsynced counter (the web
-   app has no way to read this app's local save file, and vice versa).
-   Clicking the widget used to open the web game instead, which looked
-   like "my keystroke count resets to 0" to anyone who hadn't used that
-   page before -- it wasn't reset, it was just a different counter. */
-function showStatsDialog() {
-  const g = currentGrowing();
-  const chartText = officialDone() ? "max tier (Pepper X, looping)" : `${state.chartPosition + 1} / ${PEPPERS.length} on the Scoville chart`;
-  dialog.showMessageBox(mainWindow, {
-    type: "info",
-    title: "Holy Hotsauce! — your stats",
-    message: `Growing: ${g.name} — ${STAGES[state.stageIndex]} (${state.stageProgress}/${KEYSTROKES_PER_STAGE})`,
-    detail:
-      `${chartText}\n\n` +
-      `${state.totalHotsauces.toLocaleString()} total hotsauces\n` +
-      `${state.totalScoville.toLocaleString()} total Scoville produced\n` +
-      `${state.totalKeystrokes.toLocaleString()} total global keystrokes (raw count only)\n\n` +
-      `This is this app's own count, powered by keystrokes anywhere on your PC. ` +
-      `"Open Full Game" (in the menu) is the separate browser game -- its own count won't match this one.`,
-    buttons: ["OK"]
+/* The full game view -- a real, resizable window showing the SAME
+   progress as the floating widget (growing icon, Scoville chart,
+   Hotsauce Shelf, Hybrid Lab), reading the same `state` this file
+   already owns. Clicking the widget used to open a browser tab running
+   the separate web game (its own unsynced counter, looked like "my
+   progress reset to 0") or a native dialog with just a few stats -- this
+   replaces both with one native, in-app drill-down into this app's own
+   progress, nothing split off into a browser. */
+function createGameWindow() {
+  gameWindow = new BrowserWindow({
+    width: 560,
+    height: 840,
+    minWidth: 420,
+    minHeight: 560,
+    title: "Holy Hotsauce!",
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      preload: path.join(__dirname, "game-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
   });
+  gameWindow.setMenuBarVisibility(false);
+  gameWindow.loadFile("game.html");
+  gameWindow.on("closed", () => { gameWindow = null; });
+  gameWindow.webContents.once("did-finish-load", () => {
+    gameWindow.webContents.send("state-update", currentSnapshot());
+  });
+}
+function openGameWindow() {
+  if (gameWindow && !gameWindow.isDestroyed()) {
+    if (gameWindow.isMinimized()) gameWindow.restore();
+    gameWindow.show();
+    gameWindow.focus();
+    return;
+  }
+  createGameWindow();
 }
 
 function showAndFocusWindow() {
@@ -327,7 +405,7 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: "Holy Hotsauce!", enabled: false },
     { type: "separator" },
-    { label: "Show Stats", click: showStatsDialog },
+    { label: "Open Game", click: openGameWindow },
     { label: "Show Widget", click: showAndFocusWindow },
     { label: "Hide Widget (stays in tray, still counting)", click: () => { if (mainWindow) mainWindow.hide(); } },
     { type: "separator" },
@@ -387,10 +465,6 @@ function buildTrayMenu() {
     { label: "Restore from File…", click: restoreFromFile },
     { type: "separator" },
     {
-      label: "Open Full Game (browser)",
-      click: () => shell.openExternal(WEB_GAME_URL)
-    },
-    {
       label: "Privacy: raw count only, see main.js",
       enabled: false
     },
@@ -422,10 +496,20 @@ function refreshTrayMenu() {
 
 /* ---- IPC from the renderer (widget window) ---- */
 ipcMain.handle("get-state", () => currentSnapshot());
-ipcMain.on("open-full-game", () => shell.openExternal(WEB_GAME_URL));
-ipcMain.on("show-stats", showStatsDialog);
+ipcMain.handle("get-peppers", () => PEPPERS);
+ipcMain.on("open-game-window", openGameWindow);
 ipcMain.on("show-settings-menu", () => {
   buildTrayMenu().popup({ window: mainWindow });
+});
+/* ---- IPC from the game window ---- */
+ipcMain.on("breed-hybrid", (e, { parentAName, parentBName, name } = {}) => {
+  breedHybrid(parentAName, parentBName, name);
+});
+ipcMain.on("set-hybrid-lab-enabled", (e, enabled) => {
+  state.settings.hybridLabEnabled = !!enabled;
+  saveStateDebounced();
+  broadcastState();
+  refreshTrayMenu();
 });
 ipcMain.on("request-quit", () => { uIOhook.stop(); app.quit(); });
 // Custom drag: the renderer tracks its own mousedown/mousemove and sends
