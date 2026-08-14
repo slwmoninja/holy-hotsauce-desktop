@@ -1,6 +1,6 @@
 {
   "name": "holy-hotsauce-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Holy Hotsauce! desktop widget — a real floating desktop icon, not trapped in a browser tab",
   "main": "main.js",
   "author": "Russ Freeman",
