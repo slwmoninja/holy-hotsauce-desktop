@@ -4,7 +4,9 @@ contextBridge.exposeInMainWorld("hhs", {
   getState: () => ipcRenderer.invoke("get-state"),
   onStateUpdate: (cb) => ipcRenderer.on("state-update", (_e, snapshot) => cb(snapshot)),
   openFullGame: () => ipcRenderer.send("open-full-game"),
+  showStats: () => ipcRenderer.send("show-stats"),
   showSettingsMenu: () => ipcRenderer.send("show-settings-menu"),
   requestQuit: () => ipcRenderer.send("request-quit"),
-  moveWindowBy: (dx, dy) => ipcRenderer.send("move-window-by", { dx, dy })
+  moveWindowBy: (dx, dy) => ipcRenderer.send("move-window-by", { dx, dy }),
+  dragEnded: () => ipcRenderer.send("drag-ended")
 });

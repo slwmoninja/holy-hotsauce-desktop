@@ -36,9 +36,13 @@ window.hhs.onStateUpdate(render);
 /* ---- custom drag (see index.html's comment: -webkit-app-region: drag
    suppressed click on this same element, so dragging is done by hand
    here instead, via mousedown/mousemove deltas sent to main.js). Click
-   (no significant movement) opens the full game -- that's the only way
-   to reach more detail from this widget; hover/tooltip was removed since
-   there's no room to show one without it clipping off this tiny window. */
+   (no significant movement) shows THIS app's own native stats dialog --
+   NOT the browser game, which is a separate, unsynced counter (that was
+   the "count = 0" confusion). A desktop install should feel like a
+   desktop app: a native dialog, not a browser tab. "Open Full Game" is
+   still one right-click away for anyone who wants the browser version.
+   Hover/tooltip was removed since there's no room to show one without it
+   clipping off this tiny window. */
 let dragging = false;
 let downX = 0, downY = 0;
 let lastX = 0, lastY = 0;
@@ -67,7 +71,8 @@ window.addEventListener("mouseup", () => {
   if (!dragging) return;
   dragging = false;
   dragEl.classList.remove("dragging");
-  if (!moved) window.hhs.openFullGame();
+  if (moved) window.hhs.dragEnded();
+  else window.hhs.showStats();
 });
 
 dragEl.addEventListener("contextmenu", (e) => {
