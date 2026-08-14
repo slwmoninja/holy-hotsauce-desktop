@@ -1,0 +1,48 @@
+{
+  "name": "holy-hotsauce-desktop",
+  "version": "1.0.0",
+  "description": "Holy Hotsauce! desktop widget — a real floating desktop icon, not trapped in a browser tab",
+  "main": "main.js",
+  "author": "Russ Freeman",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.5"
+  },
+  "build": {
+    "appId": "com.slwmoninja.holyhotsauce.desktop",
+    "productName": "Holy Hotsauce!",
+    "npmRebuild": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "shapes.js",
+      "index.html",
+      "tray-icon.png",
+      "package.json"
+    ],
+    "directories": { "output": "dist" },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.ico",
+      "category": "public.app-category.games"
+    }
+  }
+}
