@@ -11,8 +11,14 @@
     font-family: "Courier New", Consolas, monospace;
     user-select: none;
   }
+  /* No -webkit-app-region: drag here -- it suppressed the plain click
+     that opens the full game in testing. Dragging is done manually in
+     renderer.js via mousedown/mousemove + IPC instead (see main.js's
+     move-window-by handler). No hover/tooltip either -- there's no room
+     to show one without it clipping off a window this small; click opens
+     the full game (in your browser) for anything more than the icon
+     itself shows. */
   #drag {
-    -webkit-app-region: drag;
     width: 100vw; height: 100vh;
     display: flex;
     flex-direction: column;
@@ -20,13 +26,12 @@
     justify-content: flex-start;
     cursor: grab;
   }
+  #drag.dragging { cursor: grabbing; }
   canvas {
-    -webkit-app-region: drag;
     image-rendering: pixelated;
     filter: drop-shadow(0 4px 8px rgba(0,0,0,0.55));
   }
   #label {
-    -webkit-app-region: drag;
     color: #f4e3d3;
     font-size: 10px;
     text-align: center;

@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld("hhs", {
   onStateUpdate: (cb) => ipcRenderer.on("state-update", (_e, snapshot) => cb(snapshot)),
   openFullGame: () => ipcRenderer.send("open-full-game"),
   showSettingsMenu: () => ipcRenderer.send("show-settings-menu"),
-  requestQuit: () => ipcRenderer.send("request-quit")
+  requestQuit: () => ipcRenderer.send("request-quit"),
+  moveWindowBy: (dx, dy) => ipcRenderer.send("move-window-by", { dx, dy })
 });

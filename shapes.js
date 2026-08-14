@@ -165,6 +165,70 @@ function isBorderCell(grid,r,c){
   return false;
 }
 
+/* Alternating black/white outline, colored by walking the connected border
+   (8-connectivity) and greedily picking whichever color is the local
+   minority among each cell's already-colored neighbors -- NOT a fixed
+   (r+c)%2 checkerboard. A coordinate-parity checkerboard only alternates
+   correctly on horizontal/vertical steps; on a diagonal step both r and c
+   change together so (r+c)%2 stays THE SAME, which made whole stretches of
+   diagonal outline collapse to a single color -- invisible against a
+   same-tone background, i.e. the outline appeared to have gaps. This
+   walk-and-vote approach keeps genuinely alternating through curves and
+   diagonals (a handful of unavoidable repeats can remain at true branch
+   points, since a solid 2D region isn't always perfectly 2-colorable --
+   but it's a large, visually-confirmed improvement over the coordinate
+   formula). Returns a Map of "r,c" -> 0 (dark) or 1 (light).
+   Precomputed once per shape, not per frame. */
+function computeOutlineColors(grid){
+  const borderSet = new Set();
+  for(let r=0;r<PG;r++){
+    for(let c=0;c<PG;c++){
+      if(isBorderCell(grid,r,c)) borderSet.add(r*PG+c);
+    }
+  }
+  function neighborsOf(r,c){
+    const out=[];
+    for(let dr=-1;dr<=1;dr++){
+      for(let dc=-1;dc<=1;dc++){
+        if(dr===0&&dc===0) continue;
+        const nr=r+dr, nc=c+dc;
+        if(borderSet.has(nr*PG+nc)) out.push(nr*PG+nc);
+      }
+    }
+    return out;
+  }
+  const order = [];
+  const remaining = new Set(borderSet);
+  while(remaining.size){
+    let start = null;
+    for(const k of remaining){ if(start===null||k<start) start=k; }
+    const queue=[start];
+    remaining.delete(start);
+    while(queue.length){
+      const k = queue.shift();
+      order.push(k);
+      for(const nb of neighborsOf(Math.floor(k/PG), k%PG)){
+        if(remaining.has(nb)){ remaining.delete(nb); queue.push(nb); }
+      }
+    }
+  }
+  const color = new Map();
+  for(const k of order){
+    const r = Math.floor(k/PG), c = k%PG;
+    let c0=0, c1=0;
+    for(const nb of neighborsOf(r,c)){
+      if(color.has(nb)){ if(color.get(nb)===0) c0++; else c1++; }
+    }
+    let chosen;
+    if(c1>c0) chosen=0;
+    else if(c0>c1) chosen=1;
+    else chosen=(r+c)%2===0?0:1;
+    color.set(k, chosen);
+  }
+  return color;
+}
+const STAGE_OUTLINE_COLORS = STAGE_SHAPES.map(computeOutlineColors);
+
 function shadeColor(hex, amt){
   const n = parseInt(hex.slice(1),16);
   let r=(n>>16)+amt, g=((n>>8)&0xff)+amt, b=(n&0xff)+amt;
@@ -180,7 +244,8 @@ function shadeForCell(color, r, c, bounds){
   return shadeColor(color, amt);
 }
 
-const OUTLINE_COLOR = "#241412";
+const OUTLINE_DARK = "#000000";
+const OUTLINE_LIGHT = "#ffffff";
 const GRID_COLOR = "#140b09";
 const VEIN_COLOR = "#1a100d";
 
@@ -194,6 +259,7 @@ function drawIcon(canvas, stageIdx, color, fillFrac){
   const grid = STAGE_SHAPES[stageIdx];
   const bounds = STAGE_BOUNDS[stageIdx];
   const stage = STAGE_NAMES_ART[stageIdx];
+  const outlineColors = STAGE_OUTLINE_COLORS[stageIdx];
 
   for(let r=0;r<PG;r++){
     for(let c=0;c<PG;c++){
@@ -204,7 +270,13 @@ function drawIcon(canvas, stageIdx, color, fillFrac){
         continue;
       }
       if(isBorderCell(grid,r,c)){
-        ctx.fillStyle = OUTLINE_COLOR;
+        // Alternating black/white "marching ants" outline (see
+        // computeOutlineColors) instead of a single fixed color, so the
+        // silhouette stays visible sitting on top of an arbitrary desktop
+        // wallpaper -- light, dark, or a busy photo -- rather than
+        // disappearing against a same-tone background.
+        const oc = outlineColors.get(r*PG+c);
+        ctx.fillStyle = oc===0 ? OUTLINE_DARK : OUTLINE_LIGHT;
         ctx.fillRect(c*cell, r*cell, cell, cell);
       }
     }
