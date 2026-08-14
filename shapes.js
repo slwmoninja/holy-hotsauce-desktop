@@ -33,7 +33,8 @@ const shapeSeedling = makeGrid((r,c)=>{
   const leafL = ellipseHit(r,c,8,8,3.6,2.4,0.55);
   const leafR = ellipseHit(r,c,8,15,3.6,2.4,-0.55);
   if(rim||body) return "pot";
-  return soil||stem||leafL||leafR;
+  if(soil) return "soil";
+  return stem||leafL||leafR;
 });
 
 // Ovate-lanceolate with a pointed tip, a central midrib + two pairs of
@@ -50,14 +51,21 @@ const shapeSeedling = makeGrid((r,c)=>{
 //     like the outer silhouette -- reads as a carved-out eye, not a
 //     vein. Veins are body cells now (see cellOn), just with their own
 //     "vein" fill color instead of the leaf's default shade.
+//  3. The two width pieces (tip taper growing to the belly, belly taper
+//     shrinking to the petiole) used mismatched power curves that both
+//     had nonzero slope where they met at the belly -- a steep rising
+//     slope from the tip side meeting a shallow falling slope from the
+//     base side reads as a sharp corner, not a rounded shoulder. Both
+//     pieces now ease with sin/cos so slope is exactly zero at the
+//     belly on both sides, giving one continuous curve through it.
 const shapeLeaf = makeGrid((r,c)=>{
   const cx = PG/2-0.5;
   if(r>=1 && r<=18){
     const t = (r-1)/17;
     const peak = 0.38, maxHalf = 6.3, minFrac = 0.15, tipPower = 2.4;
     let w;
-    if(t<=peak) w = Math.pow(t/peak, tipPower);
-    else { const tt=(t-peak)/(1-peak); w = Math.pow(1-tt,0.75)*(1-minFrac)+minFrac; }
+    if(t<=peak) w = Math.sin(Math.PI/2*Math.pow(t/peak, tipPower));
+    else { const tt=(t-peak)/(1-peak); w = minFrac+(1-minFrac)*Math.cos(Math.PI/2*tt); }
     const half = maxHalf*w;
     if(Math.abs(c-cx)>half) return false;
     if(Math.abs(c-cx)<=0.5 && r>=5 && r<=15) return "vein";
@@ -89,8 +97,7 @@ const shapeBlossom = makeGrid((r,c)=>{
       petal = true;
     }
   }
-  const stem = r>=PG-3 && Math.abs(c-cx)<=0.6;
-  return petal||stem;
+  return petal;
 });
 
 const shapePepper = (function(){
@@ -146,9 +153,9 @@ const shapeBottle = makeGrid((r,c)=>{
 const STAGE_SHAPES = [shapeSeedling, shapeLeaf, shapeBlossom, shapePepper, shapeBottle];
 const STAGE_NAMES_ART = ["seedling","leaf","blossom","pepper","bottle"];
 const STAGE_COLORS = {
-  seedling: {default:"#4caf50", pot:"#c07a4e"},
+  seedling: {default:"#4caf50", pot:"#c1633c", soil:"#5c3a21"},
   leaf:     {default:"#4caf50", stem:"#6ea83f", vein:"#1b5e20"},
-  blossom:  {default:"#f2a6c4", center:"#f4c542"},
+  blossom:  {default:"#f9cbe0", center:"#c2185b"},
   pepper:   {default:"#d32f2f", stem:"#4caf50", calyx:"#4caf50"},
   bottle:   {default:"#d32f2f", label:"#f0e6da", cap:"#6a1b9a"}
 };
@@ -169,9 +176,17 @@ function cellKind(v){ return typeof v==="string" ? v : null; }
 // color per stage no matter which pepper -- only the flat chart-list
 // swatches (plain CSS background, no drawIcon involved) ever showed the
 // real per-pepper gradient.
+// seedling/leaf/blossom are pre-fruit stages -- their plain (kind-less)
+// body cells (stem, leaf blade, petals) should stay the fixed default
+// shade from STAGE_COLORS rather than the pepper's own gradient, since
+// nothing pepper-specific has grown yet. pepper/bottle stages still fall
+// back to instanceColor for their plain cells so the fruit/bottle shows
+// the real per-pepper gradient.
+const FIXED_PALETTE_STAGES = new Set(["seedling","leaf","blossom"]);
 function colorFor(stage, kind, instanceColor){
   const m = STAGE_COLORS[stage];
-  return (kind && m[kind]) ? m[kind] : instanceColor;
+  if(kind && m[kind]) return m[kind];
+  return FIXED_PALETTE_STAGES.has(stage) ? m.default : instanceColor;
 }
 
 function computeBounds(grid){
